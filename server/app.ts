@@ -29,15 +29,16 @@ type FileRow = {
   size: number;
   created: number;
 };
-export function createApp(dataDir: string, origin = "http://localhost:5173") {
-  mkdirSync(path.join(dataDir, "uploads"), { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(path.join(dataDir, "vault.db"));
+export function createApp(dataDir: string, origin = "http://localhost:5173", memory = false) {
+  if (!memory) mkdirSync(path.join(dataDir, "uploads"), { recursive: true, mode: 0o700 });
+  const db = new DatabaseSync(memory ? ":memory:" : path.join(dataDir, "vault.db"));
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
  CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),expires INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS files(id TEXT PRIMARY KEY,owner TEXT REFERENCES users(id),name TEXT NOT NULL,size INTEGER NOT NULL,created INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS shares(id TEXT PRIMARY KEY,file_id TEXT REFERENCES files(id) ON DELETE CASCADE,hash TEXT UNIQUE NOT NULL,expires INTEGER NOT NULL,revoked INTEGER DEFAULT 0);
  CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,owner TEXT NOT NULL,action TEXT NOT NULL,name TEXT NOT NULL,created INTEGER NOT NULL);`);
+  if (memory) db.exec("CREATE TABLE file_content(id TEXT PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,body TEXT NOT NULL)");
   const app = express();
   app.disable("x-powered-by");
   app.use(
@@ -120,6 +121,7 @@ export function createApp(dataDir: string, origin = "http://localhost:5173") {
       let user = db.prepare("SELECT * FROM users WHERE email=?").get(email) as
         User | undefined;
       if (mode === "register") {
+        if (memory && Number(db.prepare("SELECT count(*) AS n FROM users").get()?.n) >= 50) return res.status(429).json({error:"Demo account capacity reached. Try again after the demo resets."});
         if (user)
           return res
             .status(409)
@@ -185,11 +187,11 @@ export function createApp(dataDir: string, origin = "http://localhost:5173") {
     ),
   );
   const upload = multer({
-    storage: multer.diskStorage({
+    storage: memory ? multer.memoryStorage() : multer.diskStorage({
       destination: path.join(dataDir, "uploads"),
       filename: (_req, _file, cb) => cb(null, randomUUID()),
     }),
-    limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 0 },
+    limits: { fileSize: memory ? 256 * 1024 : 20 * 1024 * 1024, files: 1, fields: 0 },
   });
   app.post("/api/files", auth, upload.single("file"), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Choose a file." });
@@ -200,7 +202,7 @@ export function createApp(dataDir: string, origin = "http://localhost:5173") {
         .replace(/[\x00-\x1f\x7f]/g, "")
         .slice(0, 200) || "download";
     const row = {
-      id: file.filename,
+      id: memory ? randomUUID() : file.filename,
       owner: res.locals.user.id,
       name,
       size: file.size,
@@ -213,18 +215,32 @@ export function createApp(dataDir: string, origin = "http://localhost:5173") {
       row.size,
       row.created,
     );
+    if (memory) {
+      const ownedCount = Number(db.prepare("SELECT count(*) AS n FROM files WHERE owner=?").get(row.owner)?.n);
+      const totalCount = Number(db.prepare("SELECT count(*) AS n FROM files").get()?.n);
+      if (ownedCount > 5 || totalCount > 20) {
+        db.prepare("DELETE FROM files WHERE id=?").run(row.id);
+        return res.status(429).json({error:"Demo capacity: five files per account and twenty files total. Remove a sample file and try again."});
+      }
+      db.prepare("INSERT INTO file_content VALUES(?,?)").run(row.id,file.buffer.toString("base64"));
+    }
     event(row.owner, "Uploaded", name);
     res.status(201).json(row);
   });
   app.get("/api/files/:id/download", auth, (req, res) => {
     const f = owned(String(req.params.id), res.locals.user.id);
     if (!f) return res.status(404).json({ error: "File not found." });
+    if (memory) {
+      const data = db.prepare("SELECT body FROM file_content WHERE id=?").get(f.id);
+      if (!data) return res.status(404).json({error:"File not found."});
+      return res.attachment(f.name).type("application/octet-stream").send(Buffer.from(String(data.body),"base64"));
+    }
     res.download(path.join(dataDir, "uploads", f.id), f.name);
   });
   app.delete("/api/files/:id", auth, (req, res) => {
     const f = owned(String(req.params.id), res.locals.user.id);
     if (!f) return res.status(404).json({ error: "File not found." });
-    unlinkSync(path.join(dataDir, "uploads", f.id));
+    if (!memory) unlinkSync(path.join(dataDir, "uploads", f.id));
     db.prepare("DELETE FROM files WHERE id=?").run(f.id);
     event(f.owner, "Deleted", f.name);
     res.json({ ok: true });
@@ -290,6 +306,11 @@ export function createApp(dataDir: string, origin = "http://localhost:5173") {
         .status(404)
         .json({ error: "This link is no longer available." });
     event(f.owner, "Download requested", f.name);
+    if (memory) {
+      const data = db.prepare("SELECT body FROM file_content WHERE id=?").get(f.id);
+      if (!data) return res.status(404).json({error:"File not found."});
+      return res.attachment(f.name).type("application/octet-stream").send(Buffer.from(String(data.body),"base64"));
+    }
     res.download(path.join(dataDir, "uploads", f.id), f.name);
   });
   app.get("/api/events", auth, (_req, res) =>

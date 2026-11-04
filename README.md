@@ -1,5 +1,7 @@
 # VaultShare
 
+[Live portfolio demo](https://vaultshare-six.vercel.app) · Sample files and test credentials only
+
 A full-stack portfolio project for private file storage and expiring sharing links. Built with React, TypeScript, Express, and SQLite. Runs locally without a cloud account.
 
 ![VaultShare dashboard](preview.png)
@@ -78,3 +80,19 @@ SQLite keeps setup small for this version; the SQL ownership and relationship mo
 Explain the difference between authentication and ownership checks, why token digests are stored, how expiration is enforced server-side, why uploads are outside the static directory, and what changes when moving from one local process to a hosted service. Demonstrate a share link working, then revoke it and show the recipient's access disappearing.
 
 References: [Express security guidance](https://expressjs.com/en/advanced/best-practice-security/) and [Node SQLite documentation](https://nodejs.org/api/sqlite.html).
+
+## Hosted portfolio demo
+
+The Vercel version keeps the tested SQLite ownership and sharing rules in a request-local in-memory database. An isolated Neon Postgres database stores one bounded shared snapshot, including file bytes encoded as base64. A Postgres row lock serializes changes and commits before any response is delivered. Hosted files never depend on ephemeral function disk and are never placed at public object-storage URLs. Authenticated owner checks and hashed bearer-link lookup still gate downloads; recipients can use share links in a different browser. Responses use attachment delivery.
+
+This storage adapter is for a small demo, not scalable production file storage. Limits: 256 KB per file, five files per account, twenty files total, fifty test accounts, 8 MB snapshot capacity, and 3,000 requests per hour across the demo. The entire shared demo resets after 24 hours without requests, including test accounts, sessions, files, and share links. Links can therefore stop working before their chosen expiry. No malware scanning, email verification, production quotas, or durable retention guarantee is provided. Never upload sensitive or important files.
+
+Local disk-backed mode retains its original 20 MB server upload limit. The UI uses the more conservative hosted demo limit. Provision Neon and expose `DATABASE_URL` to Vercel; the adapter initializes its metadata table on first use. Canonical Vercel environment variables determine the allowed write origin; `APP_ORIGIN` can override it for a custom domain. Secrets, environments, local data, and Vercel project linkage are ignored by Git.
+
+Normal validation: `npm run build` and `npm test`. The provider-backed check is opt-in:
+
+```sh
+RUN_CLOUD_TESTS=1 npx tsx --test tests/cloud.test.ts
+```
+
+It verifies persisted file bytes across app instances, denied access by a second account, guest download through a bearer link, revocation, and deletion. It uses generated test credentials without printing them.

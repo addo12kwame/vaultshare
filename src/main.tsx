@@ -126,8 +126,8 @@ function App() {
   }
   async function upload(file?: File) {
     if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-      setError("Files must be 20 MB or smaller.");
+    if (file.size > 256 * 1024) {
+      setError("Hosted demo files must be 256 KB or smaller.");
       return;
     }
     setBusy(true);
@@ -370,6 +370,7 @@ function App() {
           </span>
         </header>
         <main>
+          <p className="hosted-demo-notice">Portfolio demo · Use sample files and test credentials only. Up to 256 KB per file, five files per account. Data resets after 24 hours of inactivity across the demo. No malware scanning.</p>
           <div className="page-heading">
             <div>
               <span className="eyebrow">YOUR FILES. YOUR TERMS.</span>
@@ -435,7 +436,7 @@ function App() {
                 <ShieldCheck size={17} />
               </span>
               <strong>{size(files.reduce((s, f) => s + f.size, 0))}</strong>
-              <small>20 MB maximum per file</small>
+              <small>Hosted demo: 256 KB maximum per file</small>
             </div>
           </div>
           {view === "files" && (
@@ -468,7 +469,7 @@ function App() {
                     </button>
                   </p>
                 </div>
-                <span className="drop-limit">UP TO 20 MB / FILE</span>
+                <span className="drop-limit">HOSTED DEMO: 256 KB / FILE</span>
               </div>
               <section className="panel">
                 <div className="panel-heading">

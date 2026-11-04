@@ -16,15 +16,17 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.0.0",
     "helmet": "^8.1.0",
+    "lucide-react": "^0.468.0",
     "multer": "^2.0.2",
+    "pg": "^8.23.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "lucide-react": "^0.468.0"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/supertest": "^6.0.0",

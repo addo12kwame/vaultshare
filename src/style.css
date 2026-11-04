@@ -960,3 +960,5 @@ footer > span:last-child {
     font-size: 10px;
   }
 }
+
+.hosted-demo-notice { padding: 12px 16px; border: 1px solid #789185; border-radius: 10px; font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
